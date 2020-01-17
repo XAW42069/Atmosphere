@@ -95,6 +95,8 @@
 .macro  EXCEPTION_HANDLER_START name, type
 vector_entry \name
     .if \type == EXCEPTION_TYPE_HOST_CRASH
+        tst     x18, #1
+        bne     _returnToCrt0
         PIVOT_STACK_FOR_CRASH
     .endif
 
@@ -145,6 +147,11 @@ _unknownException:
     sub     x0, x0, x1
     bl      handleUnknownException
     b       .
+
+_returnToCrt0:
+    bic     x18, x18, #1
+    msr     elr_el2, x18
+    eret
 
 UNKNOWN_EXCEPTION       _irqSp0
 

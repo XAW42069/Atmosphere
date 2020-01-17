@@ -18,13 +18,12 @@
 
 #ifdef PLATFORM_TEGRA
 
-#include "tegra/memory_map.h"
+#include "tegra/stage2_config.h"
 
 #elif defined(PLATFORM_QEMU)
 
-#include "qemu/memory_map.h"
+#include "qemu/stage2_config.h"
 
 #endif
 
-void configureMemoryMapEnableMmu(void);
 void configureMemoryMapEnableStage2(void);

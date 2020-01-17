@@ -52,25 +52,36 @@ _startCommon:
 
     bl      cacheClearLocalDataCacheOnBoot
     cbz     x19, 1f
+
+    // "Boot core only" stuff:
     bl      cacheClearSharedDataCachesOnBoot
+    // Temporarily use temp end region as stack, then create the translation table
+    adr     x0, _imageLayout
+    ldr     x8, [x0, #8]
+    ldr     x9, [x0, #0x20]
+    add     sp, x8, x9
+    bl      memoryMapSetupMmu
 
 1:
+    // Enable MMU, note that the function is not allowed to use any stack
+    adr     x0, _imageLayout
+    ldr     x18, =_postMmuEnableReturnAddr
+    orr     x18, x18, #1
+    bl      memoryMapEnableMmu
+
+    // This is where we will land on exception return after enabling the MMU:
+_postMmuEnableReturnAddr:
     // Get core ID
-    // Ensure Aff0 is 4-1 at most (4 cores), and that Aff1, 2 and 3 are 0 (1 cluster only)
-    mrs     x0, mpidr_el1
-    tst     x0, #(0xFF << 32)
-    bne     .
-    and     x0, x0, #0x00FFFFFF        // Aff0 to 2
-    cmp     x0, #4
-    bhs     .
+    mrs     x8, mpidr_el1
+    and     x8, x8, #0xFF
 
-    // Set stack pointer
-    adrp    x8, __stacks_top__
-    lsl     x9, x0, #10
-    sub     sp, x8, x9
+    mov     w0, w8
+    bl      memoryMapGetStackTop
+    mov     sp, x0
 
-    // Set up x18, other sysregs, BSS, MMU, etc.
+    // Set up x18, other sysregs, BSS, etc.
     // Don't call init array to save space?
+    mov     w0, w8
     mov     w1, w19
     bl      initSystem
 
@@ -92,3 +103,24 @@ _startCommon:
     b       _restoreAllRegisters
 
 .pool
+
+/*
+typedef struct LoadImageLayout {
+    uintptr_t startPa;
+    uintptr_t tempPa;
+    uintptr_t vbar;
+
+    size_t maxImageSize;
+    size_t maxTempSize;
+    size_t mmuTable;
+    size_t imageSize; // "image" includes "real" BSS but not tempbss
+} LoadImageLayout;
+*/
+_imageLayout:
+    .quad       __start_pa__
+    .quad       __temp_pa__
+    .quad       __vectors_start__
+    .quad       __max_image_size__
+    .quad       __max_temp_size__
+    .quad       __mmu_tbl__
+    .quad        __image_size__
