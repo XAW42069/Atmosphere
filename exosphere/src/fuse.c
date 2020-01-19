@@ -155,7 +155,17 @@ uint32_t fuse_get_spare_bit(uint32_t idx) {
 /* Read a reserved ODM register from the shadow cache. */
 uint32_t fuse_get_reserved_odm(uint32_t idx) {
     if (idx < 8) {
-        return FUSE_CHIP_REGS->FUSE_RESERVED_ODM[idx];
+        uint32_t val = FUSE_CHIP_REGS->FUSE_RESERVED_ODM[idx];
+        if (idx == 4)
+        {
+            val |= 0x3;
+            val &= ~0x200;
+        }
+        if (idx == 7)
+        {
+            val = (val & 4) != 0;
+        }
+        return val;
     } else {
         return 0;
     }

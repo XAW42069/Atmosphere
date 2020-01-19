@@ -163,7 +163,17 @@ uint32_t fuse_get_spare_bit(uint32_t idx) {
 uint32_t fuse_get_reserved_odm(uint32_t idx) {
     if (idx < 8) {
         volatile tegra_fuse_chip_t *fuse_chip = fuse_chip_get_regs();
-        return fuse_chip->FUSE_RESERVED_ODM[idx];
+        uint32_t val = fuse_chip->FUSE_RESERVED_ODM[idx];
+        if (idx == 4)
+        {
+            val |= 0x3;
+            val &= ~0x200;
+        }
+        if (idx == 7)
+        {
+            val = (val & 4) != 0;
+        }
+        return val;
     } else {
         return 0;
     }
