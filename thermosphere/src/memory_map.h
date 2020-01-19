@@ -40,3 +40,8 @@
 #define MEMORY_MAP_VA_GICD                  MEMORY_MAP_VA_MMIO_BASE
 #define MEMORY_MAP_VA_GICC                  (MEMORY_MAP_VA_MMIO_BASE + 0x1000)
 #define MEMORY_MAP_VA_GICH                  (MEMORY_MAP_VA_MMIO_BASE + 0x3000)
+
+#define MEMORY_MAP_VA_MMIO_PLAT_BASE        (MEMORY_MAP_VA_MMIO_BASE + 0x90000)
+
+// Non-reentrant
+uintptr_t memoryMapPlatformMmio(uintptr_t pa, size_t size);

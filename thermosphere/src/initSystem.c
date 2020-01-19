@@ -17,6 +17,7 @@
 #include <string.h>
 #include "core_ctx.h"
 #include "platform/stage2.h"
+#include "platform/devices.h"
 #include "sysreg.h"
 #include "utils.h"
 
@@ -57,5 +58,6 @@ void initSystem(u32 coreId, bool isBootCore, u64 argument)
         memset(__real_bss_end__, 0, __bss_end__ - __real_bss_end__);
     }
 
-    configureMemoryMapEnableStage2();
+    stage2ConfigureAndEnable();
+    devicesMapAllExtra();
 }

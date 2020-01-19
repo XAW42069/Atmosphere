@@ -15,12 +15,11 @@
  */
 
 #include "stage2_config.h"
+#include "interrupt_config.h"
 #include "../../utils.h"
 #include "../../mmu.h"
 #include "../../core_ctx.h"
 
-// Tegra PA size is 36-bit... should we limit ourselves to 34?
-// i.e. 14GB of dram max
 #define ADDRSPACESZ    36
 #define ADDRSPACESZ2   ADDRSPACESZ
 
@@ -43,10 +42,10 @@ static inline void identityMapL3(u64 *tbl, uintptr_t addr, size_t size, u64 attr
     mmu_map_block_range(3, tbl, addr, addr, size, attribs | MMU_PTE_BLOCK_INNER_SHAREBLE);
 }
 
-uintptr_t configureStage2MemoryMap(u32 *addrSpaceSize)
+uintptr_t stage2Configure(u32 *addrSpaceSize)
 {
     *addrSpaceSize = ADDRSPACESZ2;
-    static const u64 devattrs = MMU_S2AP_RW | MMU_MEMATTR_DEVICE_NGNRE;
+    static const u64 devattrs = MMU_PTE_BLOCK_XN | MMU_S2AP_RW | MMU_MEMATTR_DEVICE_NGNRE;
     static const u64 unchanged = MMU_S2AP_RW | MMU_MEMATTR_NORMAL_CACHEABLE_OR_UNCHANGED;
     if (currentCoreCtx->isBootCore) {
         identityMapL1(g_vttbl, 0x00000000ull, BITL(30), unchanged);
@@ -59,10 +58,10 @@ uintptr_t configureStage2MemoryMap(u32 *addrSpaceSize)
         identityMapL3(g_vttbl_l3_0, 0x00000000ull, BITL(21), unchanged);
 
         // GICD -> trapped, GICv2 CPU -> vCPU interface, GICH -> trapped (access denied including for the unused view)
-        mmu_unmap_page(g_vttbl_l3_0, 0x50401000ull);
-        mmu_unmap_page(g_vttbl_l3_0, 0x50404000ull);
-        mmu_unmap_page(g_vttbl_l3_0, 0x50405000ull);
-        mmu_map_page_range(g_vttbl_l3_0, 0x50042000ull, 0x50046000ull, 0x2000ull, devattrs);
+        mmu_unmap_page(g_vttbl_l3_0, MEMORY_MAP_PA_GICD);
+        mmu_unmap_page(g_vttbl_l3_0, MEMORY_MAP_PA_GICH);
+        mmu_unmap_page(g_vttbl_l3_0, MEMORY_MAP_PA_GICH + 0x1000ull);
+        mmu_map_page_range(g_vttbl_l3_0, MEMORY_MAP_PA_GICC, MEMORY_MAP_PA_GICD, 0x2000ull, devattrs);
     }
 
     return (uintptr_t)g_vttbl;

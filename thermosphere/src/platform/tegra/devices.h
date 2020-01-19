@@ -16,14 +16,4 @@
 
 #pragma once
 
-#ifdef PLATFORM_TEGRA
-
-#include "tegra/stage2_config.h"
-
-#elif defined(PLATFORM_QEMU)
-
-#include "qemu/stage2_config.h"
-
-#endif
-
-void stage2ConfigureAndEnable(void);
+void devicesMapAllExtra(void);

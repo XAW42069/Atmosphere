@@ -19,10 +19,10 @@
 #include "../mmu.h"
 #include "stage2.h"
 
-void configureMemoryMapEnableStage2(void)
+void stage2ConfigureAndEnable(void)
 {
     u32 addrSpaceSize;
-    uintptr_t vttbr = configureStage2MemoryMap(&addrSpaceSize);
+    uintptr_t vttbr = stage2Configure(&addrSpaceSize);
 
     u32 ps = GET_SYSREG(id_aa64mmfr0_el1) & 0xF;
     /*
@@ -42,15 +42,15 @@ void configureMemoryMapEnableStage2(void)
     __dsb();
     __isb();
 
-    // TLB invalidation
-    __tlb_invalidate_el1_stage12();
-    __dsb();
-    __isb();
-
     // Enable stage 2
     u64 hcr = GET_SYSREG(hcr_el2);
     hcr |= HCR_VM;
     SET_SYSREG(hcr_el2, hcr);
+    __dsb();
+    __isb();
+
+    // TLB invalidation
+    __tlb_invalidate_el1_stage12_local();
     __dsb();
     __isb();
 }

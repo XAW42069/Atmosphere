@@ -79,6 +79,7 @@ void test(void)
 
 void thermosphereMain(ExceptionStackFrame *frame, u64 pct)
 {
+    DEBUG("hello");
     initIrq();
 
     if (currentCoreCtx->isBootCore) {

@@ -17,27 +17,30 @@
 #include "memory_map.h"
 #include "mmu.h"
 #include "sysreg.h"
+#include "platform/interrupt_config.h"
 
 #define ATTRIB_MEMTYPE_NORMAL MMU_PTE_BLOCK_MEMTYPE(MEMORY_MAP_MEMTYPE_NORMAL)
 #define ATTRIB_MEMTYPE_DEVICE MMU_PTE_BLOCK_MEMTYPE(MEMORY_MAP_MEMTYPE_DEVICE_NGNRE)
 
 typedef struct LoadImageLayout {
     uintptr_t startPa;
-    uintptr_t tempPa;
-    uintptr_t vbar;
-
     size_t maxImageSize;
-    size_t maxTempSize;
-    size_t mmuTableOffset;
     size_t imageSize; // "image" includes "real" BSS but not tempbss
+
+    uintptr_t tempPa;
+    size_t maxTempSize;
+    size_t tempSize;
+
+    uintptr_t vbar;
 } LoadImageLayout;
 
-void memoryMapSetupMmu(const LoadImageLayout *layout)
-{
-    static const u64 normalAttribs = MMU_PTE_BLOCK_INNER_SHAREBLE | ATTRIB_MEMTYPE_NORMAL;
-    static const u64 deviceAttribs = MMU_PTE_BLOCK_INNER_SHAREBLE | ATTRIB_MEMTYPE_DEVICE;
+static uintptr_t g_currentPlatformMmioPage = MEMORY_MAP_VA_MMIO_PLAT_BASE;
 
-    u64 *mmuTable = (u64 *)(layout->startPa + layout->mmuTableOffset);
+void memoryMapSetupMmu(const LoadImageLayout *layout, u64 *mmuTable)
+{
+    static const u64 normalAttribs   =                    MMU_PTE_BLOCK_INNER_SHAREBLE | ATTRIB_MEMTYPE_NORMAL;
+    static const u64 deviceAttribs   = MMU_PTE_BLOCK_XN | MMU_PTE_BLOCK_INNER_SHAREBLE | ATTRIB_MEMTYPE_DEVICE;
+
     // mmuTable is currently a PA
     mmu_init_table(mmuTable, 0x200);
 
@@ -48,15 +51,16 @@ void memoryMapSetupMmu(const LoadImageLayout *layout)
             - the table will reuse itself as L3 table for the 0x7FFFE00000+ range
             - the table itself will be accessible at 0x7FFFFFF000
     */
-    mmuTable[0x1FF] = (uintptr_t)mmuTable | MMU_PTE_TYPE_TABLE;
+    mmuTable[0x1FF] = (uintptr_t)mmuTable | MMU_PTE_BLOCK_XN | MMU_PTE_TYPE_TABLE;
 
     /*
         Layout in physmem:
         Location1
             Image (code and data incl. BSS)
-            Part of "temp" (tempbss, mmu table, stacks) if there's enough space left
+            Part of "temp" (tempbss, stacks) if there's enough space left
         Location2
             Remaining of "temp" (note: we don't and can't check if there's enough mem left!)
+            MMU table (taken from temp physmem)
 
         Layout in vmem:
         Location1
@@ -75,51 +79,52 @@ void memoryMapSetupMmu(const LoadImageLayout *layout)
     uintptr_t curVa = MEMORY_MAP_VA_IMAGE;
     uintptr_t curPa = layout->startPa;
 
-    size_t tempInImageRegionSize = layout->maxImageSize - layout->imageSize;
+    size_t tempInImageRegionMaxSize = layout->maxImageSize - layout->imageSize;
+    size_t tempInImageRegionSize;
     size_t tempExtraSize;
-    if (layout->mmuTableOffset + 0x1000 <= layout->maxImageSize) {
+    if (layout->tempSize <= tempInImageRegionMaxSize) {
+        tempInImageRegionSize = layout->tempSize;
         tempExtraSize = 0;
     } else {
         // We need extra data
-        tempExtraSize = (layout->mmuTableOffset + 0x1000) - tempInImageRegionSize;
+        tempInImageRegionSize = tempInImageRegionMaxSize;
+        tempExtraSize = layout->tempSize - tempInImageRegionSize;
     }
     size_t imageRegionMapSize = (layout->imageSize + tempInImageRegionSize + 0xFFF) & ~0xFFFul;
-    size_t tempExtraSizeAligned = (tempExtraSize + 0xFFF) & ~0xFFFul;
+    size_t tempExtraMapSize = (tempExtraSize + 0xFFF) & ~0xFFFul;
 
     // Do not map the MMU table in that mapping:
-    size_t tempExtraMapSize = tempExtraSizeAligned >= 0x1000 ? tempExtraSizeAligned - 0x1000 : tempExtraSizeAligned;
     mmu_map_page_range(mmuTable, curVa, curPa, imageRegionMapSize, normalAttribs);
+
     curVa += imageRegionMapSize;
     curPa = layout->tempPa;
     mmu_map_page_range(mmuTable, curVa, curPa, tempExtraMapSize, normalAttribs);
+    curPa += tempExtraMapSize;
 
     // Map the remaining temporary data as stacks, aligned 0x1000
-    size_t tempRemainingSize = layout->maxTempSize - tempExtraSizeAligned;
-    curPa += tempExtraSizeAligned;
 
     // Crash stacks, total size is fixed:
     curVa = MEMORY_MAP_VA_CRASH_STACKS_BOTTOM;
     mmu_map_page_range(mmuTable, curVa, curPa, MEMORY_MAP_VA_CRASH_STACKS_SIZE, normalAttribs);
     curPa += MEMORY_MAP_VA_CRASH_STACKS_SIZE;
-    tempRemainingSize -= MEMORY_MAP_VA_CRASH_STACKS_SIZE;
 
     // Regular stacks
-    //size_t sizePerStack = (tempRemainingSize & ~0xFFFul) / 4;
     size_t sizePerStack = 0x1000;
     curVa = MEMORY_MAP_VA_STACKS_TOP - sizePerStack;
     for (u32 i = 0; i < 4; i++) {
         mmu_map_page_range(mmuTable, curVa, curPa, sizePerStack, normalAttribs);
         curVa -= 2 * sizePerStack;
+        curPa += sizePerStack;
     }
 
     // MMIO
-    // TODO
-    (void)deviceAttribs;
+    mmu_map_page(mmuTable, MEMORY_MAP_VA_GICD, MEMORY_MAP_PA_GICD, deviceAttribs);
+    mmu_map_page(mmuTable, MEMORY_MAP_VA_GICC, MEMORY_MAP_PA_GICC, deviceAttribs);
+    mmu_map_page(mmuTable, MEMORY_MAP_VA_GICH, MEMORY_MAP_PA_GICH, deviceAttribs);
 }
 
-void memoryMapEnableMmu(const LoadImageLayout *layout)
+void memoryMapEnableMmu(const LoadImageLayout *layout, uintptr_t mmuTable)
 {
-    uintptr_t mmuTable = layout->startPa + layout->mmuTableOffset;
     u32 ps = GET_SYSREG(id_aa64mmfr0_el1) & 0xF;
     /*
         - PA size: from ID_AA64MMFR0_EL1
@@ -127,7 +132,7 @@ void memoryMapEnableMmu(const LoadImageLayout *layout)
         - Shareability attribute for memory associated with translation table walks using TTBR0_EL2: Inner Shareable
         - Outer cacheability attribute for memory associated with translation table walks using TTBR0_EL2: Normal memory, Outer Write-Back Read-Allocate Write-Allocate Cacheable
         - Inner cacheability attribute for memory associated with translation table walks using TTBR0_EL2: Normal memory, Inner Write-Back Read-Allocate Write-Allocate Cacheable
-        - T0SZ = from configureMemoryMap
+        - T0SZ = MEMORY_MAP_VA_SPACE_SIZE = 39
     */
     u64 tcr = TCR_EL2_RSVD | TCR_PS(ps) | TCR_TG0_4K | TCR_SHARED_INNER | TCR_ORGN_WBWA | TCR_IRGN_WBWA | TCR_T0SZ(MEMORY_MAP_VA_SPACE_SIZE);
 
@@ -150,7 +155,8 @@ void memoryMapEnableMmu(const LoadImageLayout *layout)
     __isb();
 
     // TLB invalidation
-    __tlb_invalidate_el2();
+    // Whether this does anything before MMU is enabled is impldef, apparently
+    __tlb_invalidate_el2_local();
     __dsb();
     __isb();
 
@@ -165,4 +171,18 @@ void memoryMapEnableMmu(const LoadImageLayout *layout)
 uintptr_t memoryMapGetStackTop(u32 coreId)
 {
     return MEMORY_MAP_VA_STACKS_TOP - 0x2000 * coreId;
+}
+
+void *memoryMapPlatformMmio(uintptr_t pa, size_t size)
+{
+    uintptr_t va = g_currentPlatformMmioPage;
+    static const u64 deviceAttribs = MMU_PTE_BLOCK_XN | MMU_PTE_BLOCK_INNER_SHAREBLE | ATTRIB_MEMTYPE_DEVICE;
+    u64 *mmuTable = (u64 *)MEMORY_MAP_VA_TTBL;
+
+    size = (size + 0xFFF) & ~0xFFFul;
+    mmu_map_page_range(mmuTable, va, pa, size, deviceAttribs);
+
+    g_currentPlatformMmioPage += size;
+
+    return va;
 }

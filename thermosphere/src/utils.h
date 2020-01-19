@@ -62,6 +62,11 @@ typedef enum ReadWriteDirection {
     DIRECTION_READWRITE = DIRECTION_READ | DIRECTION_WRITE,
 } ReadWriteDirection;
 
+static inline void __wfi(void)
+{
+    __asm__ __volatile__ ("wfi" ::: "memory");
+}
+
 static inline void __wfe(void)
 {
     __asm__ __volatile__ ("wfe" ::: "memory");
@@ -110,12 +115,12 @@ static inline void __isb(void)
     __asm__ __volatile__ ("isb" ::: "memory");
 }
 
-static inline void __tlb_invalidate_el2(void)
+static inline void __tlb_invalidate_el2_local(void)
 {
     __asm__ __volatile__ ("tlbi alle2" ::: "memory");
 }
 
-static inline void __tlb_invalidate_el1_stage12(void)
+static inline void __tlb_invalidate_el1_stage12_local(void)
 {
     __asm__ __volatile__ ("tlbi alle1" ::: "memory");
 }

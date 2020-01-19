@@ -8,15 +8,16 @@ PHDRS
 
 MEMORY
 {
-    mainVa  : ORIGIN = 0x7FFFE00000, LENGTH = 2M - 16K
+    mainVa  : ORIGIN = 0x7FFFE10000, LENGTH = 2M - 64K
 }
 
 SECTIONS
 {
     __start_pa__        = ORIGIN(main);
     __temp_pa__         = ORIGIN(temp);
+    /*__mmu_table__       = ORIGIN(temp) + LENGTH(temp) - 0x1000;*/
     __max_image_size__  = LENGTH(main);
-    __max_temp_size__   = LENGTH(temp);
+    __max_temp_size__   = LENGTH(temp) - 0x1000;
 
     .text :
     {
@@ -148,7 +149,7 @@ SECTIONS
         *(COMMON)
         . = ALIGN(8);
         __real_bss_end__ = ABSOLUTE(.);
-        __image_size__ = __real_bss_end__ - __start__;
+        __image_size__ = ABSOLUTE(__real_bss_end__ - __start__);
         /*
             The logic here: tempbss *additional pages* are at a very different PA, but
             we can allow .tempbss to use unused "non-temporary" BSS space. Their VAs are
@@ -156,10 +157,7 @@ SECTIONS
         */
         *(.tempbss .tempbss.*)
         __bss_end__ = ABSOLUTE(.);
-        . = ALIGN(0x1000);
-        __mmu_tbl__ = ABSOLUTE(.);
-        . += 0x1000;
-        /* Stacks and crash stacks use the remaining PA space... */
+        __temp_size__ = ABSOLUTE(__bss_end__ - __real_bss_end__);
     } >mainVa :NONE
 
 

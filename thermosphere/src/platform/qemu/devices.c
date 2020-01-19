@@ -14,16 +14,18 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#include "devices.h"
+#include "../../memory_map.h"
+#include "../../utils.h"
 
-#ifdef PLATFORM_TEGRA
+#include "uart.h"
 
-#include "tegra/stage2_config.h"
+void devicesMapAllExtra(void)
+{
+    uartSetRegisterBase(memoryMapPlatformMmio(MEMORY_MAP_PA_UART, 0x1000));
 
-#elif defined(PLATFORM_QEMU)
-
-#include "qemu/stage2_config.h"
-
-#endif
-
-void stage2ConfigureAndEnable(void);
+    // Don't broadcast, since it's only ran once per boot by only one core, before the others are started...
+    __tlb_invalidate_el2_local();
+    __dsb();
+    __isb();
+}

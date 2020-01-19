@@ -18,6 +18,18 @@
 #include "timers.h"
 #include "../../utils.h"
 
+static uinptr_t g_carRegs;
+
+static inline volatile tegra_car_t *car_get_regs(void)
+{
+    return (volatile tegra_car_t *)g_carRegs;
+}
+
+static inline volatile uint32_t *car_reg_at(uint32_t offset)
+{
+    return (volatile uint32_t *)(g_carRegs + offset);
+}
+
 static inline uint32_t get_clk_source_reg(CarDevice dev) {
     switch (dev) {
         case CARDEVICE_UARTA: return 0x178;
@@ -93,24 +105,29 @@ static inline uint32_t get_clk_source_div(CarDevice dev) {
 static uint32_t g_clk_reg_offsets[NUM_CAR_BANKS] = {0x010, 0x014, 0x018, 0x360, 0x364, 0x280, 0x298};
 static uint32_t g_rst_reg_offsets[NUM_CAR_BANKS] = {0x004, 0x008, 0x00C, 0x358, 0x35C, 0x28C, 0x2A4}; 
 
+void car_set_regs(uintptr_t regs)
+{
+    g_carRegs = regs;
+}
+
 void clk_enable(CarDevice dev) {
     uint32_t clk_source_reg;
     if ((clk_source_reg = get_clk_source_reg(dev))) {
-        MAKE_CAR_REG(clk_source_reg) = (get_clk_source_val(dev) << 29) | get_clk_source_div(dev);
+        *car_get_reg_at(clk_source_reg) = (get_clk_source_val(dev) << 29) | get_clk_source_div(dev);
     }
-    MAKE_CAR_REG(g_clk_reg_offsets[dev >> 5]) |= BIT(dev & 0x1F);
+    *car_get_reg_at(g_clk_reg_offsets[dev >> 5]) |= BIT(dev & 0x1F);
 }
 
 void clk_disable(CarDevice dev) {
-    MAKE_CAR_REG(g_clk_reg_offsets[dev >> 5]) &= ~(BIT(dev & 0x1F));
+    *car_get_reg_at(g_clk_reg_offsets[dev >> 5]) &= ~(BIT(dev & 0x1F));
 }
 
 void rst_enable(CarDevice dev) {
-    MAKE_CAR_REG(g_rst_reg_offsets[dev >> 5]) |= BIT(dev & 0x1F);
+    *car_get_reg_at(g_rst_reg_offsets[dev >> 5]) |= BIT(dev & 0x1F);
 }
 
 void rst_disable(CarDevice dev) {
-    MAKE_CAR_REG(g_rst_reg_offsets[dev >> 5]) &= ~(BIT(dev & 0x1F));
+    *car_get_reg_at(g_rst_reg_offsets[dev >> 5]) &= ~(BIT(dev & 0x1F));
 }
 
 void clkrst_enable(CarDevice dev) {

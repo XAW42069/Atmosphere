@@ -18,12 +18,10 @@
 
 #ifdef PLATFORM_TEGRA
 
-#include "tegra/stage2_config.h"
+#include "tegra/devices.h"
 
 #elif defined(PLATFORM_QEMU)
 
-#include "qemu/stage2_config.h"
+#include "qemu/devices.h"
 
 #endif
-
-void stage2ConfigureAndEnable(void);

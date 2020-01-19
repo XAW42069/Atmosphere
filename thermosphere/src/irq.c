@@ -32,22 +32,22 @@ static void initGic(void)
         initGicV2Pointers(&g_irqManager.gic);
 
         // Disable interrupt handling & global interrupt distribution
-        g_irqManager.gic.gicd->ctlr = 0;
+        gicd->ctlr = 0;
 
         // Get some info
-        g_irqManager.numSharedInterrupts = 32 * (g_irqManager.gic.gicd->typer & 0x1F); // number of interrupt lines / 32
+        g_irqManager.numSharedInterrupts = 32 * (gicd->typer & 0x1F); // number of interrupt lines / 32
 
         // unimplemented priority bits (lowest significant) are RAZ/WI
-        g_irqManager.gic.gicd->ipriorityr[0] = 0xFF;
-        g_irqManager.priorityShift = 8 - __builtin_popcount(g_irqManager.gic.gicd->ipriorityr[0]);
-        g_irqManager.numPriorityLevels = (u8)BIT(__builtin_popcount(g_irqManager.gic.gicd->ipriorityr[0]));
+        gicd->ipriorityr[0] = 0xFF;
+        g_irqManager.priorityShift = 8 - __builtin_popcount(gicd->ipriorityr[0]);
+        g_irqManager.numPriorityLevels = (u8)BIT(__builtin_popcount(gicd->ipriorityr[0]));
 
-        g_irqManager.numCpuInterfaces = (u8)(1 + ((g_irqManager.gic.gicd->typer >> 5) & 7));
-        g_irqManager.numListRegisters = (u8)(1 + (g_irqManager.gic.gich->vtr & 0x3F));
+        g_irqManager.numCpuInterfaces = (u8)(1 + ((gicd->typer >> 5) & 7));
+        g_irqManager.numListRegisters = (u8)(1 + (gich->vtr & 0x3F));
     }
 
-    volatile ArmGicV2Controller *gicc = g_irqManager.gic.gicc;
-    volatile ArmGicV2Distributor *gicd = g_irqManager.gic.gicd;
+    volatile ArmGicV2Controller *gicc = gicc;
+    volatile ArmGicV2Distributor *gicd = gicd;
 
     // Only one core will reset the GIC state for the shared peripheral interrupts
 
@@ -135,7 +135,7 @@ static inline bool checkGuestTimerInterrupts(ExceptionStackFrame *frame, u16 irq
 
 static void doConfigureInterrupt(u16 id, u8 prio, bool isLevelSensitive)
 {
-    volatile ArmGicV2Distributor *gicd = g_irqManager.gic.gicd;
+    volatile ArmGicV2Distributor *gicd = gicd;
     gicd->icenabler[id / 32] = BIT(id % 32);
 
     if (id >= 32) {
@@ -177,7 +177,7 @@ void configureInterrupt(u16 id, u8 prio, bool isLevelSensitive)
 void irqSetAffinity(u16 id, u8 affinity)
 {
     u64 flags = recursiveSpinlockLockMaskIrq(&g_irqManager.lock);
-    g_irqManager.gic.gicd->itargetsr[id] = affinity;
+    gicd->itargetsr[id] = affinity;
     recursiveSpinlockUnlockRestoreIrq(&g_irqManager.lock, flags);
 }
 
@@ -206,7 +206,7 @@ void handleIrqException(ExceptionStackFrame *frame, bool isLowerEl, bool isA32)
 {
     (void)isLowerEl;
     (void)isA32;
-    volatile ArmGicV2Controller *gicc = g_irqManager.gic.gicc;
+    volatile ArmGicV2Controller *gicc = gicc;
 
     // Acknowledge the interrupt. Interrupt goes from pending to active.
     u32 iar = gicc->iar;
@@ -277,7 +277,7 @@ void handleIrqException(ExceptionStackFrame *frame, bool isLowerEl, bool isA32)
 
     // Bottom half part
     if (hasBottomHalf) {
-        exceptionEnterInterruptibleHypervisorCode(frame);
+        exceptionEnterInterruptibleHypervisorCode();
         unmaskIrq();
         if (transportIface != NULL) {
             transportInterfaceIrqHandlerBottomHalf(transportIface);

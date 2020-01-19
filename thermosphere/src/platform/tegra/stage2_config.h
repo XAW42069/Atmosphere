@@ -18,5 +18,5 @@
 
 #include "../../types.h"
 
-uintptr_t configureStage2MemoryMap(u32 *addrSpaceSize);
+uintptr_t stage2Configure(u32 *addrSpaceSize);
 

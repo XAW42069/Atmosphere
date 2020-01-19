@@ -37,9 +37,9 @@ start:
 start2:
     mov     x19, xzr
 _startCommon:
-    // Disable interrupts, select sp_el2
+    // Disable interrupts, select sp_el0 before mmu is enabled
     msr     daifset, 0b1111
-    msr     spsel, #1
+    msr     spsel, #0
 
     mrs     x20, cntpct_el0
 
@@ -56,21 +56,25 @@ _startCommon:
     // "Boot core only" stuff:
     bl      cacheClearSharedDataCachesOnBoot
     // Temporarily use temp end region as stack, then create the translation table
+    // The stack top is also equal to the mmu table address...
     adr     x0, _imageLayout
-    ldr     x8, [x0, #8]
-    ldr     x9, [x0, #0x20]
-    add     sp, x8, x9
+    ldp     x21, x22, [x0, #0x18]
+    add     x1, x21, x22
+    mov     sp, x1
     bl      memoryMapSetupMmu
 
 1:
     // Enable MMU, note that the function is not allowed to use any stack
     adr     x0, _imageLayout
     ldr     x18, =_postMmuEnableReturnAddr
-    orr     x18, x18, #1
+    add     x1, x21, x22
     bl      memoryMapEnableMmu
 
     // This is where we will land on exception return after enabling the MMU:
 _postMmuEnableReturnAddr:
+    // Select sp_el2
+    msr     spsel, #1
+
     // Get core ID
     mrs     x8, mpidr_el1
     and     x8, x8, #0xFF
@@ -105,22 +109,23 @@ _postMmuEnableReturnAddr:
 .pool
 
 /*
-typedef struct LoadImageLayout {
-    uintptr_t startPa;
-    uintptr_t tempPa;
-    uintptr_t vbar;
+    typedef struct LoadImageLayout {
+        uintptr_t startPa;
+        size_t imageSize; // "image" includes "real" BSS but not tempbss
+        size_t maxImageSize;
 
-    size_t maxImageSize;
-    size_t maxTempSize;
-    size_t mmuTable;
-    size_t imageSize; // "image" includes "real" BSS but not tempbss
-} LoadImageLayout;
+        uintptr_t tempPa;
+        size_t maxTempSize;
+        size_t tempSize;
+
+        uintptr_t vbar;
+    } LoadImageLayout;
 */
 _imageLayout:
     .quad       __start_pa__
-    .quad       __temp_pa__
-    .quad       __vectors_start__
     .quad       __max_image_size__
+    .quad       __image_size__
+    .quad       __temp_pa__
     .quad       __max_temp_size__
-    .quad       __mmu_tbl__
-    .quad        __image_size__
+    .quad       __temp_size__
+    .quad       __vectors_start__
